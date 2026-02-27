@@ -1,12 +1,16 @@
 #!/bin/bash
 
 # Tinkerwell Auto-Updater Script
-# Usage: update-tinkerwell [--force] [--version X.Y.Z]
+# Usage: update-tinkerwell [--force] [--version X.Y.Z] [--uninstall]
 
 set -euo pipefail
 
-LOG_FILE="$HOME/.tinkerwell-updater.log"
-TINKERWELL_DIR="/opt/Tinkerwell"
+DATA_DIR="$HOME/.local/share/tinkerwell-updater"
+TINKERWELL_DIR="$HOME/.local/opt/Tinkerwell"
+BIN_LINK="$HOME/.local/bin/tinkerwell"
+DESKTOP_FILE="$HOME/.local/share/applications/tinkerwell.desktop"
+
+LOG_FILE="$DATA_DIR/updater.log"
 MANIFEST_URL="https://tinkerwell.fra1.cdn.digitaloceanspaces.com/tinkerwell/latest-linux.yml"
 BASE_CDN="https://tinkerwell.fra1.cdn.digitaloceanspaces.com/tinkerwell"
 TMP_DIR="/tmp/tinkerwell-update-$$"
@@ -34,6 +38,10 @@ cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
 
 # --- Helpers ---
+
+ensure_dirs() {
+    mkdir -p "$DATA_DIR" "$HOME/.local/opt" "$HOME/.local/bin" "$HOME/.local/share/applications"
+}
 
 get_current_version() {
     if [[ -f "$VERSION_FILE" ]]; then
@@ -129,46 +137,63 @@ install_tinkerwell() {
 
     # Backup
     if [[ -d "$TINKERWELL_DIR" ]]; then
-        sudo mv "$TINKERWELL_DIR" "$backup" || die "Backup failed"
+        mv "$TINKERWELL_DIR" "$backup" || die "Backup failed"
     fi
 
     # Move extracted files
-    if ! sudo mv squashfs-root "$TINKERWELL_DIR"; then
+    if ! mv squashfs-root "$TINKERWELL_DIR"; then
         log "Install failed, rolling back..."
-        [[ -d "$backup" ]] && sudo mv "$backup" "$TINKERWELL_DIR"
+        [[ -d "$backup" ]] && mv "$backup" "$TINKERWELL_DIR"
         die "Installation failed"
     fi
 
-    # Update wrapper script
-    sudo tee /usr/local/bin/tinkerwell > /dev/null << 'EOF'
-#!/bin/bash
-exec /opt/Tinkerwell/tinkerwell "$@"
-EOF
-    sudo chmod +x /usr/local/bin/tinkerwell
+    # Symlink binary
+    ln -sf "$TINKERWELL_DIR/tinkerwell" "$BIN_LINK"
 
-    # Update desktop entry
-    sudo cp "$TINKERWELL_DIR/tinkerwell.desktop" /usr/share/applications/tinkerwell.desktop 2>/dev/null || true
-    sudo sed -i "s|Exec=AppRun|Exec=/usr/local/bin/tinkerwell|" /usr/share/applications/tinkerwell.desktop 2>/dev/null || true
-    sudo sed -i "s|Icon=tinkerwell|Icon=/opt/Tinkerwell/usr/share/icons/hicolor/512x512/apps/tinkerwell.png|" /usr/share/applications/tinkerwell.desktop 2>/dev/null || true
+    # Desktop entry
+    local icon_path="$TINKERWELL_DIR/usr/share/icons/hicolor/512x512/apps/tinkerwell.png"
+    cat > "$DESKTOP_FILE" << DESKTOP
+[Desktop Entry]
+Name=Tinkerwell
+Comment=Tinker with your PHP applications
+Exec=$TINKERWELL_DIR/tinkerwell --no-sandbox %U
+Terminal=false
+Type=Application
+Icon=$icon_path
+StartupWMClass=Tinkerwell
+Categories=Development;
+DESKTOP
 
     # Cleanup old backups (keep 1)
-    ls -dt ${TINKERWELL_DIR}.backup-* 2>/dev/null | tail -n +2 | xargs -r sudo rm -rf
+    ls -dt ${TINKERWELL_DIR}.backup-* 2>/dev/null | tail -n +2 | xargs -r rm -rf || true
 
     log "Installation OK"
+}
+
+uninstall_tinkerwell() {
+    log "=== Uninstalling Tinkerwell ==="
+
+    rm -rf "$TINKERWELL_DIR" ${TINKERWELL_DIR}.backup-*
+    rm -f "$BIN_LINK" "$DESKTOP_FILE"
+
+    log "Tinkerwell uninstalled"
+    notify "normal" "Tinkerwell Uninstalled" "Tinkerwell has been removed from this system"
 }
 
 # --- Main ---
 
 main() {
+    ensure_dirs
     log "=== Tinkerwell Auto-Updater ==="
     [[ "$EUID" -eq 0 ]] && die "Do not run as root"
 
     local force=false target_version=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --force)   force=true; log "Force mode" ;;
-            --version) target_version="$2"; shift ;;
-            *)         die "Unknown option: $1\nUsage: update-tinkerwell [--force] [--version X.Y.Z]" ;;
+            --force)     force=true; log "Force mode" ;;
+            --version)   target_version="$2"; shift ;;
+            --uninstall) uninstall_tinkerwell; exit 0 ;;
+            *)           die "Unknown option: $1\nUsage: update-tinkerwell [--force] [--version X.Y.Z] [--uninstall]" ;;
         esac
         shift
     done
@@ -182,14 +207,12 @@ main() {
     local download_url sha512 latest_version
 
     if [[ -n "$target_version" ]]; then
-        # Specific version requested
         force=true
         latest_version="$target_version"
         download_url="$BASE_CDN/Tinkerwell-${target_version}.AppImage"
         sha512=""
         log "Target version: $target_version"
     else
-        # Fetch latest from manifest
         local manifest
         manifest=$(get_latest_info)
         latest_version=$(parse_version "$manifest")
@@ -219,7 +242,11 @@ main() {
                 ;;
         esac
     else
-        notify "normal" "Updating Tinkerwell" "Installing version $latest_version (current: $current_version)..."
+        if [[ -n "$target_version" ]]; then
+            notify "normal" "Updating Tinkerwell" "Installing version $target_version (current: $current_version)..."
+        else
+            notify "normal" "Updating Tinkerwell" "Force reinstalling (current: $current_version)..."
+        fi
     fi
 
     # Download

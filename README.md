@@ -2,55 +2,43 @@
 
 Automatic updater for [Tinkerwell](https://tinkerwell.app/) on Linux. Keeps your installation up to date — just add it to your startup scripts. Also works as a fresh installer if Tinkerwell isn't installed yet.
 
+**No sudo required** — everything installs to `~/.local/`.
+
 ## Features
 
+- **No root privileges needed** — installs to user-local directories
 - **Automatic update detection** — fetches version manifest from Tinkerwell CDN, compares with installed version
 - **Fresh install support** — installs Tinkerwell from scratch if not present
 - **SHA-512 verification** — validates download integrity before installing
 - **Specific version install** — install any Tinkerwell version by number
+- **Uninstall** — clean removal with `--uninstall`
 - **Desktop notifications** — system notifications for update status
 - **Safe updates** — backs up current installation, automatic rollback on failure
 - **Internet check** — verifies connectivity with retry logic
 - **Startup-friendly** — designed to run silently at boot
-- **Logging** — all actions logged to `~/.tinkerwell-updater.log`
+- **Logging** — all actions logged to `~/.local/share/tinkerwell-updater/updater.log`
 
 ## Requirements
 
 - Linux x64
-- `curl`, `tar`, `ping`, `sha512sum`
+- `curl`, `ping`, `sha512sum`
 - `notify-send` (pre-installed on GNOME/KDE/Cinnamon)
-- `sudo` access
+- `~/.local/bin` in your `PATH` (default on most modern distros)
 
 ## Installation
 
 ```bash
 git clone https://github.com/YOUR_USER/tinkerwell-updater.git
 cd tinkerwell-updater
-sudo ./install.sh
+./install.sh
 ```
 
 ### Manual install
 
 ```bash
-sudo cp update-tinkerwell.sh /usr/local/bin/update-tinkerwell
-sudo chmod +x /usr/local/bin/update-tinkerwell
-```
-
-### Passwordless sudo (recommended for automation)
-
-```bash
-sudo visudo -f /etc/sudoers.d/tinkerwell-updater
-```
-
-```
-your_username ALL=(ALL) NOPASSWD: /bin/mv /opt/Tinkerwell /opt/Tinkerwell.backup-*
-your_username ALL=(ALL) NOPASSWD: /bin/mv /opt/Tinkerwell.backup-* /opt/Tinkerwell
-your_username ALL=(ALL) NOPASSWD: /bin/mv squashfs-root /opt/Tinkerwell
-your_username ALL=(ALL) NOPASSWD: /bin/rm -rf /opt/Tinkerwell.backup-*
-your_username ALL=(ALL) NOPASSWD: /usr/bin/tee /usr/local/bin/tinkerwell
-your_username ALL=(ALL) NOPASSWD: /bin/chmod +x /usr/local/bin/tinkerwell
-your_username ALL=(ALL) NOPASSWD: /bin/cp /opt/Tinkerwell/tinkerwell.desktop /usr/share/applications/tinkerwell.desktop
-your_username ALL=(ALL) NOPASSWD: /usr/bin/sed -i * /usr/share/applications/tinkerwell.desktop
+mkdir -p ~/.local/bin
+cp update-tinkerwell.sh ~/.local/bin/update-tinkerwell
+chmod +x ~/.local/bin/update-tinkerwell
 ```
 
 ### Add to startup (optional)
@@ -77,6 +65,7 @@ X-GNOME-Autostart-enabled=true
 update-tinkerwell                    # auto-update to latest
 update-tinkerwell --force            # force reinstall latest
 update-tinkerwell --version 5.10.0   # install specific version
+update-tinkerwell --uninstall        # remove Tinkerwell
 ```
 
 | Option | Description |
@@ -84,6 +73,7 @@ update-tinkerwell --version 5.10.0   # install specific version
 | *(none)* | Check version manifest, install if new version available |
 | `--force` | Skip check and reinstall |
 | `--version X.Y.Z` | Install specific version (implies `--force`) |
+| `--uninstall` | Remove Tinkerwell and all related files |
 
 ## How it works
 
@@ -92,8 +82,8 @@ update-tinkerwell --version 5.10.0   # install specific version
 3. **Download** — downloads AppImage from CDN
 4. **Verify** — validates SHA-512 checksum against manifest
 5. **Extract** — extracts AppImage using `--appimage-extract`
-6. **Backup** — moves `/opt/Tinkerwell` to `/opt/Tinkerwell.backup-YYYYMMDD-HHMMSS`
-7. **Install** — moves extracted files to `/opt/Tinkerwell`, creates wrapper script and desktop entry
+6. **Backup** — moves current installation to `~/.local/opt/Tinkerwell.backup-YYYYMMDD-HHMMSS`
+7. **Install** — moves extracted files to `~/.local/opt/Tinkerwell`, creates symlink and desktop entry
 8. **Cleanup** — removes old backups (keeps 1)
 9. **Notify** — desktop notification with result
 
@@ -101,18 +91,17 @@ update-tinkerwell --version 5.10.0   # install specific version
 
 | Path | Description |
 |---|---|
-| `/usr/local/bin/update-tinkerwell` | Updater script |
-| `/usr/local/bin/tinkerwell` | Wrapper script (created by updater) |
-| `~/.tinkerwell-updater.log` | Log file |
-| `/opt/Tinkerwell` | Installation directory |
-| `/usr/share/applications/tinkerwell.desktop` | Desktop entry |
+| `~/.local/bin/update-tinkerwell` | Updater script |
+| `~/.local/bin/tinkerwell` | Symlink to Tinkerwell binary |
+| `~/.local/opt/Tinkerwell/` | Installation directory |
+| `~/.local/share/applications/tinkerwell.desktop` | Desktop entry |
+| `~/.local/share/tinkerwell-updater/updater.log` | Log file |
 
 ## Uninstall
 
 ```bash
-sudo rm /usr/local/bin/update-tinkerwell /usr/local/bin/tinkerwell
-sudo rm /etc/sudoers.d/tinkerwell-updater
-rm ~/.tinkerwell-updater.log
+update-tinkerwell --uninstall
+rm ~/.local/bin/update-tinkerwell
 ```
 
 ## License
