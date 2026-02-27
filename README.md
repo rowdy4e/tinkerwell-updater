@@ -65,6 +65,7 @@ X-GNOME-Autostart-enabled=true
 update-tinkerwell                    # auto-update to latest
 update-tinkerwell --force            # force reinstall latest
 update-tinkerwell --version 5.10.0   # install specific version
+update-tinkerwell --quiet            # skip "up to date" notification
 update-tinkerwell --uninstall        # remove Tinkerwell
 ```
 
@@ -73,6 +74,7 @@ update-tinkerwell --uninstall        # remove Tinkerwell
 | *(none)* | Check version manifest, install if new version available |
 | `--force` | Skip check and reinstall |
 | `--version X.Y.Z` | Install specific version (implies `--force`) |
+| `--quiet` | Skip "up to date" notification (updates/errors still notify) |
 | `--uninstall` | Remove Tinkerwell and all related files |
 
 ## How it works

@@ -187,13 +187,14 @@ main() {
     log "=== Tinkerwell Auto-Updater ==="
     [[ "$EUID" -eq 0 ]] && die "Do not run as root"
 
-    local force=false target_version=""
+    local force=false target_version="" quiet=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --force)     force=true; log "Force mode" ;;
             --version)   target_version="$2"; shift ;;
+            --quiet)     quiet=true ;;
             --uninstall) uninstall_tinkerwell; exit 0 ;;
-            *)           die "Unknown option: $1\nUsage: update-tinkerwell [--force] [--version X.Y.Z] [--uninstall]" ;;
+            *)           die "Unknown option: $1\nUsage: update-tinkerwell [--force] [--version X.Y.Z] [--quiet] [--uninstall]" ;;
         esac
         shift
     done
@@ -229,7 +230,7 @@ main() {
         case $vc in
             0)
                 log "Already up to date"
-                notify "low" "Tinkerwell Up to Date" "Version $current_version — no update available"
+                $quiet || notify "low" "Tinkerwell Up to Date" "Version $current_version — no update available"
                 exit 0
                 ;;
             1)
