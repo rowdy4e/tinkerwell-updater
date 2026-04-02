@@ -184,8 +184,7 @@ tui_multiselect() {
     done
 
     if ! $any; then
-        printf '  \e[33mNo versions selected\e[0m\n' >/dev/tty
-        return 1
+        return 2
     fi
 }
 
@@ -285,30 +284,55 @@ interactive_ignore() {
     fi
 
     # Build labels & pre-check already-ignored
-    local labels=() prechecked=""
+    local labels=() prechecked="" was_ignored=()
     for ((i=0; i<${#versions[@]}; i++)); do
         if grep -qxF "${versions[$i]}" "$IGNORED_VERSIONS_FILE" 2>/dev/null; then
-            labels+=("${versions[$i]}  \e[90m(already ignored)\e[0m")
+            labels+=("${versions[$i]}  \e[90m(ignored)\e[0m")
             prechecked+="$i "
+            was_ignored+=("${versions[$i]}")
         else
             labels+=("${versions[$i]}")
         fi
     done
 
-    local selected
-    selected=$(tui_multiselect "Which versions do you want to ignore?" "$prechecked" "${labels[@]}") || return 0
+    local selected rc=0
+    selected=$(tui_multiselect "Select versions to ignore (uncheck to unignore):" "$prechecked" "${labels[@]}") || rc=$?
+    [[ $rc -eq 1 ]] && return 0
 
-    local added=0
-    while IFS= read -r item; do
-        local ver="${item%%  *}"
+    # Parse selected versions into an array
+    local -a selected_arr=()
+    if [[ -n "$selected" ]]; then
+        while IFS= read -r item; do
+            selected_arr+=("${item%%  *}")
+        done <<< "$selected"
+    fi
+
+    local changes=0
+
+    # Add newly checked versions
+    for ver in "${selected_arr[@]}"; do
         if ! grep -qxF "$ver" "$IGNORED_VERSIONS_FILE" 2>/dev/null; then
             echo "$ver" >> "$IGNORED_VERSIONS_FILE"
             printf '  \e[32m✓\e[0m %s added to ignore list\n' "$ver"
-            added=$((added + 1))
+            changes=$((changes + 1))
         fi
-    done <<< "$selected"
-    if [[ $added -eq 0 ]]; then
-        echo "  No new versions ignored"
+    done
+
+    # Remove unchecked versions that were previously ignored
+    for ver in "${was_ignored[@]}"; do
+        local still_checked=false
+        for s in "${selected_arr[@]}"; do
+            [[ "$s" == "$ver" ]] && { still_checked=true; break; }
+        done
+        if ! $still_checked; then
+            sed -i "/^$(sed 's/[.[\*^$]/\\&/g' <<< "$ver")$/d" "$IGNORED_VERSIONS_FILE"
+            printf '  \e[32m✓\e[0m %s removed from ignore list\n' "$ver"
+            changes=$((changes + 1))
+        fi
+    done
+
+    if [[ $changes -eq 0 ]]; then
+        echo "  No changes"
     fi
 }
 
