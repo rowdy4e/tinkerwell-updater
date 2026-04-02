@@ -11,6 +11,7 @@ Automatic updater for [Tinkerwell](https://tinkerwell.app/) on Linux. Keeps your
 - **Fresh install support** — installs Tinkerwell from scratch if not present
 - **SHA-512 verification** — validates download integrity before installing
 - **Specific version install** — install any Tinkerwell version by number
+- **Skip versions** — ignore specific versions via `--ignore` or the `ignored_versions` config file
 - **Uninstall** — clean removal with `--uninstall`
 - **Desktop notifications** — system notifications for update status
 - **Safe updates** — backs up current installation, automatic rollback on failure
@@ -65,6 +66,7 @@ X-GNOME-Autostart-enabled=true
 update-tinkerwell                    # auto-update to latest
 update-tinkerwell --force            # force reinstall latest
 update-tinkerwell --version 5.10.0   # install specific version
+update-tinkerwell --ignore 5.10.0    # add version to ignore list
 update-tinkerwell --quiet            # skip "up to date" notification
 update-tinkerwell --uninstall        # remove Tinkerwell
 ```
@@ -74,8 +76,27 @@ update-tinkerwell --uninstall        # remove Tinkerwell
 | *(none)* | Check version manifest, install if new version available |
 | `--force` | Skip check and reinstall |
 | `--version X.Y.Z` | Install specific version (implies `--force`) |
+| `--ignore X.Y.Z` | Add version to ignore list and exit |
+| `--unignore X.Y.Z` | Remove version from ignore list and exit |
+| `--list-ignored` | Show all ignored versions and exit |
 | `--quiet` | Skip "up to date" notification (updates/errors still notify) |
 | `--uninstall` | Remove Tinkerwell and all related files |
+
+### Ignoring versions
+
+To skip a specific version (e.g. wait for the next one):
+
+```bash
+update-tinkerwell --ignore 5.10.0
+```
+
+You can also edit the ignore list directly — one version per line:
+
+```bash
+nano ~/.local/share/tinkerwell-updater/ignored_versions
+```
+
+Ignored versions are skipped automatically on every run (including `--force`). Using `--version X.Y.Z` always installs regardless of the ignore list.
 
 ## How it works
 
@@ -98,6 +119,7 @@ update-tinkerwell --uninstall        # remove Tinkerwell
 | `~/.local/opt/Tinkerwell/` | Installation directory |
 | `~/.local/share/applications/tinkerwell.desktop` | Desktop entry |
 | `~/.local/share/tinkerwell-updater/updater.log` | Log file |
+| `~/.local/share/tinkerwell-updater/ignored_versions` | Ignored versions (one per line) |
 
 ## Uninstall
 
