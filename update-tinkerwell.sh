@@ -132,7 +132,7 @@ tui_multiselect() {
             if (( i == cursor )); then
                 pfx="\e[32m❯\e[0m" style="\e[1m"
             fi
-            printf '  %b %b %b%s\e[0m\n' "$pfx" "$mark" "$style" "${items[$i]}" >/dev/tty
+            printf '  %b %b %b%b\e[0m\n' "$pfx" "$mark" "$style" "${items[$i]}" >/dev/tty
         done
 
         printf '\n  \e[90m↑↓ navigate · space select · enter confirm · q cancel\e[0m' >/dev/tty
@@ -189,7 +189,85 @@ tui_multiselect() {
     fi
 }
 
-# --- Interactive ignore/unignore ---
+tui_singleselect() {
+    local prompt="$1"
+    shift
+    local -a items=("$@")
+    local count=${#items[@]}
+    [[ $count -eq 0 ]] && return 1
+
+    local cursor=0
+    local max_vis
+    max_vis=$(( $(tput lines 2>/dev/tty || echo 20) - 6 ))
+    (( max_vis > count )) && max_vis=$count
+    (( max_vis < 3 )) && max_vis=3
+    local offset=0
+
+    local saved_tty
+    saved_tty=$(stty -g </dev/tty 2>/dev/null)
+    trap 'printf "\e[?25h" >/dev/tty 2>/dev/null; stty "'"$saved_tty"'" </dev/tty 2>/dev/null; exit 130' INT
+    printf '\e[?25l' >/dev/tty
+
+    local total=$((max_vis + 4))
+    for ((i=0; i<total; i++)); do printf '\n' >/dev/tty; done
+    printf '\e[%dA' "$total" >/dev/tty
+    printf '\e7' >/dev/tty
+
+    _tui_s_draw() {
+        printf '\e8\e[J' >/dev/tty
+        printf '  \e[1;36m%s\e[0m\n\n' "$prompt" >/dev/tty
+
+        (( cursor < offset )) && offset=$cursor
+        (( cursor >= offset + max_vis )) && offset=$((cursor - max_vis + 1))
+
+        for ((i=offset; i < offset + max_vis && i < count; i++)); do
+            if (( i == cursor )); then
+                printf '  \e[32m❯\e[0m \e[1m%b\e[0m\n' "${items[$i]}" >/dev/tty
+            else
+                printf '    %b\n' "${items[$i]}" >/dev/tty
+            fi
+        done
+
+        printf '\n  \e[90m↑↓ navigate · enter select · q cancel\e[0m' >/dev/tty
+    }
+
+    _tui_s_draw
+
+    while true; do
+        local key
+        IFS= read -rsn1 key </dev/tty
+        case "$key" in
+            $'\e')
+                local seq
+                IFS= read -rsn2 -t 0.1 seq </dev/tty
+                case "$seq" in
+                    '[A') (( cursor > 0 )) && (( cursor-- )) ;;
+                    '[B') (( cursor < count - 1 )) && (( cursor++ )) ;;
+                esac
+                _tui_s_draw
+                ;;
+            ''|$'\r')
+                break
+                ;;
+            q)
+                printf '\e[?25h' >/dev/tty
+                stty "$saved_tty" </dev/tty 2>/dev/null
+                trap - INT
+                printf '\n\n  \e[33mCancelled\e[0m\n' >/dev/tty
+                return 1
+                ;;
+        esac
+    done
+
+    printf '\e[?25h' >/dev/tty
+    stty "$saved_tty" </dev/tty 2>/dev/null
+    trap - INT
+    printf '\n\n' >/dev/tty
+
+    echo "${items[$cursor]}"
+}
+
+# --- Interactive ignore/unignore/version ---
 
 interactive_ignore() {
     echo "Fetching available versions..."
@@ -250,6 +328,38 @@ interactive_unignore() {
         sed -i "/^$(sed 's/[.[\*^$]/\\&/g' <<< "$ver")$/d" "$IGNORED_VERSIONS_FILE"
         printf '  \e[32m✓\e[0m %s removed from ignore list\n' "$ver"
     done <<< "$selected"
+}
+
+interactive_version() {
+    echo "Fetching available versions..." >&2
+    local versions=()
+
+    local changelog
+    changelog=$(curl -sL --connect-timeout 10 --max-time 15 "https://tinkerwell.app/changelog" 2>/dev/null)
+    if [[ -n "$changelog" ]]; then
+        mapfile -t versions < <(echo "$changelog" | grep -oP 'Tinkerwell \K[0-9]+\.[0-9]+\.[0-9]+' | awk '!seen[$0]++' | head -20)
+    fi
+
+    if [[ ${#versions[@]} -eq 0 ]]; then
+        echo "Could not fetch version list. Try: update-tinkerwell --version X.Y.Z" >&2
+        return 1
+    fi
+
+    # Mark installed version
+    local installed
+    installed=$(get_current_version)
+    local labels=()
+    for v in "${versions[@]}"; do
+        if [[ "$v" == "$installed" ]]; then
+            labels+=("$v  \e[90m(installed)\e[0m")
+        else
+            labels+=("$v")
+        fi
+    done
+
+    local selected
+    selected=$(tui_singleselect "Which version do you want to install?" "${labels[@]}") || return 1
+    echo "${selected%%  *}"
 }
 
 version_compare() {
@@ -373,7 +483,13 @@ main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --force)     force=true; log "Force mode" ;;
-            --version)   target_version="$2"; shift ;;
+            --version)
+                if [[ -n "${2:-}" ]]; then
+                    target_version="$2"; shift
+                else
+                    target_version=$(interactive_version) || exit 0
+                fi
+                ;;
             --quiet)     quiet=true ;;
             --uninstall) uninstall_tinkerwell; exit 0 ;;
             --list-ignored)
